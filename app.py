@@ -8,6 +8,9 @@ ENABLE_SELFTEST = os.environ.get("ENABLE_SELFTEST", "true").lower() == "true"
 
 app = Flask(__name__)
 
+# Son qəbul edilən mesaj üçün sadə yaddaş (RAM)
+LAST = {}
+
 # === Util =====================================================================
 NUMERIC_FIELDS = {
     "open","close","high","low","volume",
@@ -51,10 +54,26 @@ def tv():
 
     # Sadə auth token
     if data.get("token") != SECRET:
+        app.logger.warning("TV BAD TOKEN")
         return jsonify(ok=False, error="Bad token"), 403
 
     ts, parsed = process_and_log(data)
-    return jsonify(ok=True, received_at=ts, parsed=parsed), 200
+
+    # >>> LOGS-a görünən, aydın sətir
+    app.logger.info(
+        "TV OK | %s %s | o=%s c=%s buy=%s sell=%s",
+        parsed.get("ticker"),
+        (data.get("payload") or {}).get("interval"),
+        parsed.get("open"), parsed.get("close"),
+        parsed.get("buy"), parsed.get("sell"),
+    )
+
+    # >>> Son mesajı yadda saxla
+    global LAST
+    LAST = {"ts": ts, "raw": data, "parsed": parsed}
+
+    # Postman üçün daha dolğun cavab
+    return jsonify(ok=True, received_at=ts, parsed=parsed, raw=data), 200
 
 @app.get("/tv/example")
 def tv_example():
@@ -130,7 +149,25 @@ def tv_selftest():
         return jsonify(ok=False, error="Bad token in selftest"), 403
 
     ts, parsed = process_and_log(data)
+
+    # Log sətiri selftest üçün də
+    app.logger.info(
+        "SELFTEST OK | %s %s | o=%s c=%s",
+        parsed.get("ticker"), payload.get("interval"),
+        parsed.get("open"), parsed.get("close"),
+    )
+
+    global LAST
+    LAST = {"ts": ts, "raw": data, "parsed": parsed}
+
     return jsonify(ok=True, mode="selftest", received_at=ts, sent=payload, parsed=parsed), 200
+
+# Son gələn mesajı göstərən endpoint
+@app.get("/last")
+def last():
+    if not LAST:
+        return {"ok": False, "error": "no messages yet"}, 404
+    return {"ok": True, **LAST}
 
 # === Local dev / Render entrypoint ============================================
 if __name__ == "__main__":
