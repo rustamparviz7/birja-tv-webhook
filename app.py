@@ -8,22 +8,22 @@ ENABLE_SELFTEST = os.environ.get("ENABLE_SELFTEST", "true").lower() == "true"
 
 app = Flask(__name__)
 
-# Logging: INFO səviyyəsini aç
+# Logging konfiqurasiyası
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(message)s"
 )
 app.logger.setLevel(logging.INFO)
 
-# Son qəbul edilən mesaj üçün sadə yaddaş (RAM)
+# Son qəbul edilən mesaj üçün yaddaş
 LAST = {}
 
 # === Util =====================================================================
 NUMERIC_FIELDS = {
-    "open","close","high","low","volume",
-    "kernel_regression_estimate","buy","sell",
-    "stopbuy","stopsell","backtest_stream",
-    "plot_0","plot_1","plot_2","plot_3","plot_4","plot_5"
+    "open", "close", "high", "low", "volume",
+    "kernel_regression_estimate", "buy", "sell",
+    "stopbuy", "stopsell", "backtest_stream",
+    "plot_0", "plot_1", "plot_2", "plot_3", "plot_4", "plot_5"
 }
 
 def to_float_or_none(v):
@@ -33,10 +33,10 @@ def to_float_or_none(v):
         return None
 
 def process_and_log(data: dict):
-    """Gələn TradingView JSON-u pars et və (lokalda) logs/ altına yaz."""
+    """Gələn TradingView JSON-u pars et və lokal logs/ altına yaz."""
     payload = data.get("payload", {}) or {}
     parsed = {k: (to_float_or_none(v) if k in NUMERIC_FIELDS else v) for k, v in payload.items()}
-    # Fayla yazmaq yalnız lokal üçündür; Render-də disk ephemeraldır
+
     try:
         os.makedirs("logs", exist_ok=True)
         ts_file = datetime.utcnow().strftime("%Y%m%d_%H%M%S_%f")
@@ -44,17 +44,17 @@ def process_and_log(data: dict):
             json.dump({"raw": data, "parsed": parsed}, f, ensure_ascii=False, indent=2)
     except Exception:
         pass
+
     ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
     return ts, parsed
 
 def log_incoming(tag: str, data: dict, parsed: dict):
-    """Gələn datanı Render log/console-a oxunaqlı ver."""
-    # 4KB-dan çox olmasın deyə kəsirik
     pretty_raw = json.dumps(data, ensure_ascii=False)[:4096]
     pretty_parsed = json.dumps(parsed, ensure_ascii=False)[:4096]
-    app.logger.info("%s RAW  : %s", tag, pretty_raw)
+
+    app.logger.info("%s RAW   : %s", tag, pretty_raw)
     app.logger.info("%s PARSED: %s", tag, pretty_parsed)
-    # stdout-a da yaz (Render bunu 100% göstərir)
+
     print(f"{tag} | {pretty_parsed}", flush=True)
 
 # === Routes ===================================================================
@@ -73,7 +73,7 @@ def tv():
         app.logger.warning("TV NO JSON BODY | headers=%s", dict(request.headers))
         return jsonify(ok=False, error="No JSON body"), 400
 
-    # Sadə auth token
+    # Auth token
     if data.get("token") != SECRET:
         app.logger.warning("TV BAD TOKEN | got=%s", data.get("token"))
         print("TV BAD TOKEN", flush=True)
@@ -81,32 +81,31 @@ def tv():
 
     ts, parsed = process_and_log(data)
 
-    # Aydın bir status sətiri
+    # Log
     app.logger.info(
         "TV OK | %s %s | o=%s c=%s buy=%s sell=%s",
         parsed.get("ticker"),
         (data.get("payload") or {}).get("interval"),
         parsed.get("open"), parsed.get("close"),
-        parsed.get("buy"), parsed.get("sell"),
+        parsed.get("buy"), parsed.get("sell")
     )
+
     print(
         f"TV OK | {parsed.get('ticker')} {(data.get('payload') or {}).get('interval')} "
         f"o={parsed.get('open')} c={parsed.get('close')} buy={parsed.get('buy')} sell={parsed.get('sell')}",
         flush=True
     )
 
-    # Son mesajı yadda saxla və xammalı/parslu cavabda qaytar
     global LAST
     LAST = {"ts": ts, "raw": data, "parsed": parsed}
 
-    # Gələnləri ekrana (log) daha detallı da verək
     log_incoming("TV IN", data, parsed)
 
     return jsonify(ok=True, received_at=ts, parsed=parsed, raw=data), 200
 
 @app.get("/tv/example")
 def tv_example():
-    """TradingView Alert Message üçün nümunə JSON (copy-paste)."""
+    """TradingView Alert Message üçün nümunə JSON."""
     return {
         "token": SECRET,
         "source": "tradingview",
@@ -130,4 +129,14 @@ def tv_example():
             "stopsell": "{{plot(\"StopSell\")}}",
             "backtest_stream": "{{plot(\"Backtest Stream\")}}",
             "plot_0": "{{plot_0}}",
-            "plot_1": "{{plot_1}}
+            "plot_1": "{{plot_1}}",
+            "plot_2": "{{plot_2}}",
+            "plot_3": "{{plot_3}}",
+            "plot_4": "{{plot_4}}",
+            "plot_5": "{{plot_5}}"
+        }
+    }
+
+# === Run (local üçündür) =======================================================
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
